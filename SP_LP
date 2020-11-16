@@ -1,0 +1,616 @@
+import yfinance as yf
+import pandas as pd
+import datetime as dt
+import numpy as np
+import time
+start_time = time.time()
+
+print("--- %s seconds ---" % (time.time() - start_time))
+
+#--------------------------------------------------------------------------------------------
+#Data downloading from yahoo finance
+
+# ticker = 'infy.ns'
+# #start = dt.datetime.today()-dt.timedelta(150)
+# #end = dt.datetime.today()
+# #ohlcv = yf.download(ticker,start,end)
+# ohlcv = yf.download(ticker, period='4d',interval='5m')
+#ohlcv.drop(['Adj Close'],axis=1,inplace = True)
+# ohlcv
+
+#--------------------------------------------------------------------------------------------
+
+# CSV file reading 
+heading = ['Date','Time','Open','High','Low','Close','Volume','OI']
+df = pd.read_csv('D:/Trading/Mech/data/Accelpix/2020/MAY/MAY.csv', header=None, names=heading) 
+df['Datetime']=df['Date'].astype(str)+' '+df['Time']
+df['Datetime'] = pd.to_datetime(df['Datetime'], format='%Y%m%d %H:%M')
+df.drop(['Date','Time','OI'],axis=1,inplace = True)
+df.set_index('Datetime',inplace=True)
+df=df.resample('5T').agg({'Open':'first','High':'max','Low':'min','Close':'last','Volume':'sum'}).dropna()
+#ohlcv=df
+ohlcv=df['2020-05-12':'2020-05-14']
+#--------------------------------------------------------------------------------------------
+###SPH/SPL function
+
+def SPHSPL(DF):
+    df=DF.copy()  
+    df['HC']=''
+    df['LC']=''
+    df['SPH']=''
+    df['SPL']=''
+    df['sph_V']=np.nan
+    df['spl_V']=np.nan
+    
+    hc=0   #variable for knowing no. of  higher high & hiher close
+    lc=0    #variable for  knowing no. of lower high & lower close
+    spl=0   #variable for knowing  spl formed
+    sph=0   #variable for knowing sph formed
+    sph_v=0
+    spl_v=0
+    m=0     #variable to know previous sph candle no
+    n=0     #variable to know previous spl candle no
+    x=len(df)   #variable to know previous bar-2
+    y=len(df)   #variable to know previous hc1
+    z=len(df)   #variable to know previous lc1
+    
+    for i in range(len(df)):
+        if i == 0:
+            pass
+        elif i == 1 and df.loc[df.index[i],'High']>df.loc[df.index[i-1],'High'] and df.loc[df.index[i],'Close']>df.loc[df.index[i-1],'Close']:
+            df.loc[df.index[i],'HC']='HC1'
+            hc+=1
+        elif i == 1 and df.loc[df.index[i],'Low']<df.loc[df.index[i-1],'Low'] and df.loc[df.index[i],'Close']<df.loc[df.index[i-1],'Close']:
+            df.loc[df.index[i],'LC']='LC1'
+            lc+=1
+        elif i > 1 and x == len(df) and spl == 0 and sph == 0:
+            for j in range(i):
+                if hc <= 1 and lc <= 1 and spl == 0 and sph == 0:
+                    if df.loc[df.index[i],'High']>df.loc[df.index[j],'High'] and df.loc[df.index[i],'Close']>df.loc[df.index[j],'Close']:
+                        hc+=1
+                        df.loc[df.index[i],'HC']=np.where(hc==1,'HC1','HC2')
+                        if hc == 2:
+                            x = i
+                            for k in range(m,i):
+                                if df.loc[df.index[k],'Low']==df.loc[df.index[0]:df.index[i],'Low'].min():
+                                    df.loc[df.index[k],'SPL']='SPL'
+                                    spl_v=df.loc[df.index[k],'spl_V']=df.loc[df.index[k],'Low']                                
+                                    n = k
+                                    spl=1
+                                    hc=0
+                        break
+                    elif df.loc[df.index[i],'Low']<df.loc[df.index[j],'Low'] and df.loc[df.index[i],'Close']<df.loc[df.index[j],'Close']:
+                        lc+=1
+                        df.loc[df.index[i],'LC']=np.where(lc==1,'LC1','LC2')
+                        if lc == 2:
+                            x = i
+                            for k in range(n,i):
+                                if df.loc[df.index[k],'High']==df.loc[df.index[0]:df.index[i],'High'].max():
+                                    df.loc[df.index[k],'SPH']='SPH'
+                                    sph_v=df.loc[df.index[k],'sph_V']=df.loc[df.index[k],'High']
+                                    m = k
+                                    sph=1
+                                    lc=0
+                        break
+        elif i < x:
+            pass
+        elif i >= x:
+            if sph == 1:
+                for l in range(x-2,len(df)):
+                    if l <= x:
+                        df.loc[df.index[l],'sph_V']=np.where(sph_v==0,np.nan,sph_v)
+                        df.loc[df.index[l],'spl_V']=np.where(spl_v==0,np.nan,spl_v)
+                    elif l == x+1 and sph == 1:
+                        df.loc[df.index[l],'sph_V']=np.where(sph_v==0,np.nan,sph_v)
+                        df.loc[df.index[l],'spl_V']=np.where(spl_v==0,np.nan,spl_v)
+                        if df.loc[df.index[l],'High']>df.loc[df.index[l-1],'High'] and df.loc[df.index[l],'Close']>df.loc[df.index[l-1],'Close']:
+                            df.loc[df.index[l],'HC']='HC1'
+                            hc=1
+                        else:
+                            pass
+                    elif l > x+1 and sph == 1:
+                        df.loc[df.index[l],'sph_V']=np.where(sph_v==0,np.nan,sph_v)
+                        df.loc[df.index[l],'spl_V']=np.where(spl_v==0,np.nan,spl_v)
+                        for j in range(x,l):
+                            if hc == 0 and df.loc[df.index[l],'High']>df.loc[df.index[j],'High'] and df.loc[df.index[l],'Close']>df.loc[df.index[j],'Close']:
+                                    hc=1
+                                    df.loc[df.index[l],'HC']='HC1'
+                                    y = l
+                                    break
+                            elif hc == 1 and l == y :
+                                pass
+                            elif hc == 1 and df.loc[df.index[l],'High']>df.loc[df.index[j],'High'] and df.loc[df.index[l],'Close']>df.loc[df.index[j],'Close']:
+                                    hc=2
+                                    df.loc[df.index[l],'HC']='HC2'                      
+                                    x = l
+                                    for k in range(m,l+1):
+                                        if df.loc[df.index[k],'Low']==df.loc[df.index[m]:df.index[l],'Low'].min():
+                                            df.loc[df.index[k],'SPL']='SPL'
+                                            spl_v=df.loc[df.index[k],'spl_V']=df.loc[df.index[k],'Low']
+                                            n=k
+                                            spl=1
+                                            sph=0
+                                            hc=0
+                                    for q in range(m,n):
+                                        if df.loc[df.index[q],'High']==df.loc[df.index[m]:df.index[n],'High'].max():
+                                            df.loc[df.index[q],'SPH']='SPH'
+                                            sph_v=df.loc[df.index[q],'sph_V']=df.loc[df.index[q],'High']
+                                    break   
+                    elif sph == 0:
+                        break                  
+            elif spl == 1: 
+                for l in range(x-2,len(df)):
+                    if l <= x:
+                        df.loc[df.index[l],'sph_V']=np.where(sph_v==0,np.nan,sph_v)
+                        df.loc[df.index[l],'spl_V']=np.where(spl_v==0,np.nan,spl_v)          
+                    elif l == x+1 and spl == 1:
+                        df.loc[df.index[l],'sph_V']=np.where(sph_v==0,np.nan,sph_v)
+                        df.loc[df.index[l],'spl_V']=np.where(spl_v==0,np.nan,spl_v)
+                        if df.loc[df.index[l],'Low']<df.loc[df.index[l-1],'Low'] and df.loc[df.index[l],'Close']<df.loc[df.index[l-1],'Close']:
+                            df.loc[df.index[l],'LC']='LC1'
+                            lc=1
+                        else:
+                            pass
+                    elif l > x+1 and spl == 1:
+                        df.loc[df.index[l],'sph_V']=np.where(sph_v==0,np.nan,sph_v)
+                        df.loc[df.index[l],'spl_V']=np.where(spl_v==0,np.nan,spl_v)
+                        for j in range(x,l):
+                            if lc == 0 and df.loc[df.index[l],'Low']<df.loc[df.index[j],'Low'] and df.loc[df.index[l],'Close']<df.loc[df.index[j],'Close']:
+                                    lc=1
+                                    df.loc[df.index[l],'LC']='LC1'
+                                    z = l
+                                    break
+                            elif lc == 1 and l == z :
+                                pass
+                            elif lc == 1 and df.loc[df.index[l],'Low']<df.loc[df.index[j],'Low'] and df.loc[df.index[l],'Close']<df.loc[df.index[j],'Close']:
+                                    lc=2
+                                    df.loc[df.index[l],'LC']='LC2'
+                                    x = l
+                                    for k in range(n,l+1):
+                                        if df.loc[df.index[k],'High']==df.loc[df.index[n]:df.index[l],'High'].max():
+                                            df.loc[df.index[k],'SPH']='SPH'
+                                            sph_v=df.loc[df.index[k],'sph_V']=df.loc[df.index[k],'High']
+                                            m = k
+                                            sph=1
+                                            spl=0
+                                            lc=0
+                                    for q in range(n,m):
+                                        if df.loc[df.index[q],'Low']==df.loc[df.index[n]:df.index[m],'Low'].min():
+                                            df.loc[df.index[q],'SPL']='SPL'
+                                            spl_v=df.loc[df.index[q],'spl_V']=df.loc[df.index[q],'Low']
+                                    break        
+                    elif spl == 0:
+                        break
+                    
+    return df
+
+df=SPHSPL(ohlcv)
+
+#--------------------------------------------------------------------------------------------
+###LPH/LPL function
+
+def LPHLPL(DF):
+    df=SPHSPL(DF)
+    
+    sph_1=0;spl_1=0;lpl=0;lph=0;lpl_v=0;lph_v=0;x=0;l=0;h=0
+    sph_V_1=0;spl_V_1=0;df['LPH']='';df['LPL']='';df['lph_V']=np.nan;df['lpl_V']=np.nan
+    
+    for i in range(len(df)):
+        if df.loc[df.index[i],'SPH']=='SPH':
+            sph_1=1
+            sph_V_1=df.loc[df.index[i],'sph_V']
+            x=h=i
+        elif df.loc[df.index[i],'SPL']=='SPL':
+            spl_1=1
+            spl_V_1=df.loc[df.index[i],'spl_V']
+            x=l=i
+        elif sph_1 == 1 and spl_1==1:
+            break
+                
+    for i in range(x,len(df)):
+        if lpl==0 and lph==0:
+            if df.loc[df.index[i],'High']>df.loc[df.index[i],'sph_V']:
+                for j in range(i):
+                    if df.loc[df.index[j],'Low']==df.loc[:df.index[i],'Low'].min():
+                        df.loc[df.index[j],'LPL']='LPL'
+                        lpl_v=df.loc[df.index[j],'lpl_V']=df.loc[:df.index[i],'Low'].min()
+                        lpl=1
+                        l=j
+                        break
+            elif df.loc[df.index[i],'Low']<df.loc[df.index[i],'spl_V']:
+                for j in range(i):
+                    if df.loc[df.index[j],'High']==df.loc[:df.index[i],'High'].max():
+                        df.loc[df.index[j],'LPH']='LPH'
+                        lpl_v=df.loc[df.index[j],'lph_V']=df.loc[:df.index[i],'High'].max()
+                        lph=1
+                        h=j
+                        break
+        elif lpl==1:
+            if df.loc[df.index[i],'Low']<df.loc[df.index[i],'spl_V']:
+                for j in range(l,i+1):
+                    if df.loc[df.index[j],'High']==df.loc[df.index[l]:df.index[i],'High'].max():
+                        lph_v=df.loc[df.index[j],'lph_V']=df.loc[df.index[l]:df.index[i],'High'].max()
+                        df.loc[df.index[j],'LPH']='LPH'
+                        lph=1
+                        lpl=0
+                        h=j
+                        break
+        elif lph==1:
+            if df.loc[df.index[i],'High']>df.loc[df.index[i],'sph_V']:
+                for j in range(h,i+1):
+                    if df.loc[df.index[j],'Low']==df.loc[df.index[h]:df.index[i],'Low'].min():
+                        lpl_v=df.loc[df.index[j],'lpl_V']=df.loc[df.index[h]:df.index[i],'Low'].min()
+                        df.loc[df.index[j],'LPL']='LPL'
+                        lph=0
+                        lpl=1
+                        l=j
+                        break
+        else:
+            pass
+    return df 
+
+               
+df=LPHLPL(ohlcv)
+
+#--------------------------------------------------------------------------------------------
+###VWAP function
+
+
+def VWAP(DF):
+    df4=DF.copy()
+    df4['AP']=0
+    df4['CVol']=0
+    df4['CV']=0
+    df4['VWAP']=0
+    x=0
+    
+    for i in range(x, len(df4)):
+        if i < x:
+            pass
+        else:
+            for i in range(x, len(df4)):
+                if i == x:
+                    df4.loc[df4.index[i],'VWAP'] = (df4.loc[df4.index[i],'High']+df4.loc[df4.index[i],'Low']+df4.loc[df4.index[i],'Close'])/3
+                elif i > x:
+                    df4.loc[df4.index[i],'AP']=(df4.loc[df4.index[i],'High']+df4.loc[df4.index[i],'Low']+df4.loc[df4.index[i],'Close'])/3
+                    df4.loc[df4.index[i],'CVol']=df4.loc[df4.index[i],'Volume']+df4.loc[df4.index[i-1],'CVol']
+                    df4.loc[df4.index[i],'CV']=(df4.loc[df4.index[i],'AP']*df4.loc[df4.index[i],'Volume'])+df4.loc[df4.index[i-1],'CV']
+                    df4.loc[df4.index[i],'VWAP']=df4.loc[df4.index[i],'CV']/df4.loc[df4.index[i],'CVol']
+                    
+                    if df4.index[i].hour == 15 and df4.index[i].minute >= 25:
+                        x = i+1
+                        break
+                
+    df4.drop(['AP', 'CVol','CV'],axis=1,inplace = True)
+    
+    return df4
+
+
+df=VWAP(df) 
+
+#--------------------------------------------------------------------------------------------
+#Supertrend coding
+
+def atr(DF,n):
+    "function to calculate True Range and Average True Range"
+    df = DF.copy()
+    df['H-L']=abs(df['High']-df['Low'])
+    df['H-PC']=abs(df['High']-df['Close'].shift(1))
+    df['L-PC']=abs(df['Low']-df['Close'].shift(1))
+    df['TR']=df[['H-L','H-PC','L-PC']].max(axis=1,skipna=False)
+    df['ATR'] = df['TR'].rolling(n).mean()
+    #df['ATR'] = df['TR'].ewm(span=n,adjust=False,min_periods=n).mean()
+    df2 = df.drop(['H-L','H-PC','L-PC'],axis=1)
+    return df['ATR']
+
+def supertrend(DF,n,m):
+    """function to calculate Supertrend given historical candle data
+        n = n day ATR - usually 7 day ATR is used
+        m = multiplier - usually 2 or 3 is used"""
+    df = DF.copy()
+    df['ATR'] = atr(df,n)
+    df["B-U"]=((df['High']+df['Low'])/2) + m*df['ATR'] 
+    df["B-L"]=((df['High']+df['Low'])/2) - m*df['ATR']
+    df["U-B"]=df["B-U"]
+    df["L-B"]=df["B-L"]
+    ind = df.index
+    for i in range(n,len(df)):
+        if df['Close'][i-1]<=df['U-B'][i-1]:
+            df.loc[ind[i],'U-B']=min(df['B-U'][i],df['U-B'][i-1])
+        else:
+            df.loc[ind[i],'U-B']=df['B-U'][i]    
+    for i in range(n,len(df)):
+        if df['Close'][i-1]>=df['L-B'][i-1]:
+            df.loc[ind[i],'L-B']=max(df['B-L'][i],df['L-B'][i-1])
+        else:
+            df.loc[ind[i],'L-B']=df['B-L'][i]  
+    df['Strend']=np.nan
+    for test in range(n,len(df)):
+        if df['Close'][test-1]<=df['U-B'][test-1] and df['Close'][test]>df['U-B'][test]:
+            df.loc[ind[test],'Strend']=df['L-B'][test]
+            break
+        if df['Close'][test-1]>=df['L-B'][test-1] and df['Close'][test]<df['L-B'][test]:
+            df.loc[ind[test],'Strend']=df['U-B'][test]
+            break
+    for i in range(test+1,len(df)):
+        if df['Strend'][i-1]==df['U-B'][i-1] and df['Close'][i]<=df['U-B'][i]:
+            df.loc[ind[i],'Strend']=df['U-B'][i]
+        elif  df['Strend'][i-1]==df['U-B'][i-1] and df['Close'][i]>=df['U-B'][i]:
+            df.loc[ind[i],'Strend']=df['L-B'][i]
+        elif df['Strend'][i-1]==df['L-B'][i-1] and df['Close'][i]>=df['L-B'][i]:
+            df.loc[ind[i],'Strend']=df['L-B'][i]
+        elif df['Strend'][i-1]==df['L-B'][i-1] and df['Close'][i]<=df['L-B'][i]:
+            df.loc[ind[i],'Strend']=df['U-B'][i]
+    return df['Strend']
+
+df['ST']=supertrend(df,10,2)
+
+#--------------------------------------------------------------------------------------------
+#Buy & Sell signals
+
+df['Count']=0
+for i in range(len(df)):
+    df.loc[df.index[i],'Count']=i
+
+#--------------------------------------------------------------------------------------------
+#Buy & Sell signals
+
+df_d=df.resample('D').agg({'Open':'first','High':'max','Low':'min','Close':'last','Volume':'sum'}).dropna()
+n_lst=[]
+date_lst=[]
+for i in range(len(df_d)):
+    if i == 0:
+        n = len(df[df_d.index[i].strftime("%Y-%m-%d")])
+        n_lst.append(n)
+        date = df_d.index[i].strftime("%Y-%m-%d")
+        date_lst.append(date)
+    elif i>0:
+        n = n + len(df[df_d.index[i].strftime("%Y-%m-%d")])
+        n_lst.append(n)
+        date = df_d.index[i].strftime("%Y-%m-%d")
+        date_lst.append(date)
+        
+df['Buy']=''
+df['Sell']=''
+df['Buy_p']=np.nan
+df['Sell_p']=np.nan
+df['PL_points']=np.nan
+
+for p in range(len(n_lst)-2):
+    sph_trd_lst=[]
+    spl_trd_lst=[]
+    ind = df.index
+    x=0
+    y=0
+    buy=0
+    sell=0
+    buy_ext=0
+    sell_ext=0
+    gap_cond = 0
+    cond_3=0
+
+    #n=len(df[df.index[0].strftime("%Y-%m-%d")])
+    d_open=df.loc[ind[n_lst[p]],'Open']
+    d_close=df.loc[ind[n_lst[p+1]-1],'Close']
+    
+    lph=df[date_lst[p]:date_lst[p+1]][df['LPH']=='LPH'].lph_V.values[-1]
+    lpl=df[date_lst[p]:date_lst[p+1]][df['LPL']=='LPL'].lpl_V.values[-1]
+    
+    for i in range(n_lst[p], n_lst[p+1]):    
+        if df.loc[ind[i],'SPH']== 'SPH' and df.loc[ind[i],'sph_V']>df.loc[ind[i],'VWAP']:
+            sph_trd_lst.append(round(df.loc[ind[i],'sph_V'],2))
+        if df.loc[ind[i],'SPL']== 'SPL' and df.loc[ind[i],'spl_V']<df.loc[ind[i],'VWAP']:
+            spl_trd_lst.append(round(df.loc[ind[i],'spl_V'],2))
+        for j in sph_trd_lst:
+            if df.loc[ind[i],'High'] > j:
+                sph_trd_lst.remove(j)
+        for j in spl_trd_lst:
+            if round(df.loc[ind[i],'Low'],2)<j:
+                spl_trd_lst.remove(j)
+            
+      
+    for i in range(n_lst[p+1], n_lst[p+2]):
+        spl_trd_lst.sort(reverse=True)
+        sph_trd_lst.sort()
+        if df.loc[ind[i],'SPH']== 'SPH' and df.loc[ind[i],'sph_V']>df.loc[ind[i],'VWAP']:
+            sph_trd_lst.append(round(df.loc[ind[i],'sph_V'],2))
+            
+        if df.loc[ind[i],'SPL']== 'SPL' and df.loc[ind[i],'spl_V']<df.loc[ind[i],'VWAP']:
+            spl_trd_lst.append(round(df.loc[ind[i],'spl_V'],2))
+            
+        if ind[i].time() == dt.time(9, 15) and ((df.loc[ind[i],'Open'] > lph and df.loc[ind[i],'Open'] > 1.003*df.loc[ind[i-1],'Close']) or (df.loc[ind[i],'Open'] < lpl and df.loc[ind[i],'Open'] < 0.997*df.loc[ind[i-1],'Close'])):
+            opn_cdl_high=high = df.loc[ind[i],'High']
+            opn_cdl_low = df.loc[ind[i],'Low']
+            gap_cond=1
+            
+        if gap_cond==1 and ind[i].time() > dt.time(9, 15) and ind[i].time() <= dt.time(9, 30):
+            if buy==0 and sell==0 and df.loc[ind[i],'High']>opn_cdl_high:
+                df.loc[ind[i],'Buy_p']=buy=opn_cdl_high
+                df.loc[ind[i],'Buy']='Buy entry'
+                x=i
+            elif buy==0 and sell==0 and df.loc[ind[i],'Low']<opn_cdl_low:
+                df.loc[ind[i],'Sell']='Sell entry'
+                df.loc[ind[i],'Sell_p']=sell=opn_cdl_low
+                x=i
+    
+        for j in sph_trd_lst:
+            if round(df.loc[ind[i],'High'],2) > j:
+                if buy==0 and sell==0 and round(df.loc[ind[i],'Low'],2) < j and df.loc[ind[i],'High'] > df.loc[ind[i-1],'ST'] and df.loc[ind[i],'High'] > df.loc[ind[i],'VWAP'] and buy==0 and j > df.loc[ind[i-1],'ST'] and j > df.loc[ind[i],'VWAP'] and ind[i].time() > dt.time(9, 30) and ind[i].time() < dt.time(14, 35) and (j <min(d_open,d_close) or j > max(d_open,d_close)):                    
+                    df.loc[ind[i],'Buy']='Buy entry'
+                    df.loc[ind[i],'Buy_p']=buy=j
+                    x=i
+                sph_trd_lst.remove(j)
+    
+        for j in spl_trd_lst:
+            if round(df.loc[ind[i],'Low'],2)<j:
+                if sell==0 and buy==0 and round(df.loc[ind[i],'High'],2)>j and df.loc[ind[i],'Low'] < df.loc[ind[i-1],'ST'] and df.loc[ind[i],'Low'] < df.loc[ind[i],'VWAP'] and sell==0 and j < df.loc[ind[i-1],'ST'] and j < df.loc[ind[i],'VWAP'] and ind[i].time() > dt.time(9, 30) and ind[i].time() < dt.time(14, 35) and (j <min(d_open,d_close) or j > max(d_open,d_close)):
+                    df.loc[ind[i],'Sell']='Sell entry'
+                    df.loc[ind[i],'Sell_p']=sell=j
+                    x=i
+                spl_trd_lst.remove(j)
+                
+        if sell != 0 and x != i:
+            if gap_cond == 1:
+                if df.loc[ind[i],'Low']<=0.997*sell:
+                    cond_3=1
+                    y=i
+                if cond_3==0 and df.loc[ind[i],'High']>min((df.loc[ind[i],'sph_V']),sell*1.003,opn_cdl_high):
+                    df.loc[ind[i],'Sell']='Sell exit'
+                    df.loc[ind[i],'Sell_p']=sell_ext=min((df.loc[ind[i],'sph_V']),sell*1.003,opn_cdl_high)
+                    df.loc[ind[i],'PL_points']=sell-sell_ext    
+                    sell=0
+                    gap_cond=0
+                    cond_3=0
+                elif i!=y and cond_3==1 and df.loc[ind[i],'High']>min((df.loc[ind[i],'sph_V']),sell,opn_cdl_high):
+                    df.loc[ind[i],'Sell']='Sell exit'
+                    df.loc[ind[i],'Sell_p']=sell_ext=min((df.loc[ind[i],'sph_V']),sell,opn_cdl_high)
+                    df.loc[ind[i],'PL_points']=sell-sell_ext    
+                    sell=0
+                    gap_cond=0
+                    cond_3=0
+                elif df.loc[ind[i],'Low'] < 0.995*sell and df.loc[ind[i],'High'] > df.loc[ind[i-1],'High']:
+                    df.loc[ind[i],'Sell']='Sell exit'
+                    df.loc[ind[i],'Sell_p']=sell_ext=df.loc[ind[i-1],'High']
+                    df.loc[ind[i],'PL_points']=sell-sell_ext    
+                    sell=0
+                    gap_cond=0
+                    cond_3=0
+                elif ind[i].time() == dt.time(15, 25):
+                    df.loc[ind[i],'Sell']='Sell exit'
+                    df.loc[ind[i],'Sell_p']=sell_ext=df.loc[ind[i],'Close']
+                    df.loc[ind[i],'PL_points']=sell-sell_ext    
+                    sell=0
+                    gap_cond=0
+                    cond_3=0
+                    break
+            else:
+                if df.loc[ind[i],'Low']<=0.997*sell:
+                    cond_3=1
+                    y = i
+                if cond_3==0 and df.loc[ind[i],'High']>min((df.loc[ind[i],'sph_V']),(df.loc[ind[i-1],'ST']),(df.loc[ind[i],'VWAP']),sell*1.003):
+                    df.loc[ind[i],'Sell']='Sell exit'
+                    df.loc[ind[i],'Sell_p']=sell_ext=min((df.loc[ind[i],'sph_V']),(df.loc[ind[i-1],'ST']),(df.loc[ind[i-1],'VWAP']),sell*1.003)
+                    df.loc[ind[i],'PL_points']=sell-sell_ext    
+                    sell=0
+                    cond_3=0
+                elif i!=y and cond_3==1 and df.loc[ind[i],'High']>min((df.loc[ind[i],'sph_V']),(df.loc[ind[i-1],'ST']),(df.loc[ind[i],'VWAP']),sell):
+                    df.loc[ind[i],'Sell']='Sell exit'
+                    df.loc[ind[i],'Sell_p']=sell_ext=min((df.loc[ind[i],'sph_V']),(df.loc[ind[i-1],'ST']),(df.loc[ind[i-1],'VWAP']),sell)
+                    df.loc[ind[i],'PL_points']=sell-sell_ext    
+                    sell=0
+                    cond_3=0
+                elif df.loc[ind[i],'Low'] < 0.995*sell and df.loc[ind[i],'High'] > df.loc[ind[i-1],'High']:
+                    df.loc[ind[i],'Sell']='Sell exit'
+                    df.loc[ind[i],'Sell_p']=sell_ext=df.loc[ind[i-1],'High']
+                    df.loc[ind[i],'PL_points']=sell-sell_ext    
+                    sell=0
+                    cond_3=0
+                elif ind[i].time() == dt.time(15, 25):
+                    df.loc[ind[i],'Sell']='Sell exit'
+                    df.loc[ind[i],'Sell_p']=sell_ext=df.loc[ind[i],'Close']
+                    df.loc[ind[i],'PL_points']=sell-sell_ext    
+                    sell=0
+                    cond_3=0
+                    break
+        if buy != 0 and x != i:
+            if gap_cond == 1:
+                if df.loc[ind[i],'High']>=1.003*buy:
+                    cond_3=1
+                    y=i
+                if cond_3==0 and df.loc[ind[i],'Low']<max((df.loc[ind[i],'spl_V']),buy*0.997,opn_cdl_low):
+                    df.loc[ind[i],'Buy']='Buy exit'
+                    df.loc[ind[i],'Buy_p']=buy_ext=max((df.loc[ind[i],'spl_V']),buy*0.997,opn_cdl_low)
+                    df.loc[ind[i],'PL_points']=buy_ext-buy 
+                    buy=0
+                    gap_cond=0
+                    cond_3=0
+                elif i!=y and cond_3==1 and df.loc[ind[i],'Low']<max((df.loc[ind[i],'spl_V']),buy,opn_cdl_low):
+                    df.loc[ind[i],'Buy']='Buy exit'
+                    df.loc[ind[i],'Buy_p']=buy_ext=max((df.loc[ind[i],'spl_V']),buy,opn_cdl_low)
+                    df.loc[ind[i],'PL_points']=buy_ext-buy 
+                    buy=0
+                    gap_cond=0
+                    cond_3=0
+                elif df.loc[ind[i],'High'] > 1.005*buy and df.loc[ind[i],'Low'] < df.loc[ind[i-1],'Low']:
+                    df.loc[ind[i],'Buy']='Buy exit'
+                    df.loc[ind[i],'Buy_p']=buy_ext=df.loc[ind[i-1],'Low']
+                    df.loc[ind[i],'PL_points']=buy_ext-buy     
+                    buy=0
+                    gap_cond=0
+                    cond_3=0
+                elif ind[i].time() == dt.time(15, 25):
+                    df.loc[ind[i],'Buy']='Buy exit'
+                    df.loc[ind[i],'Buy_p']=buy_ext=df.loc[ind[i],'Close']
+                    df.loc[ind[i],'PL_points']=buy_ext-buy 
+                    buy=0
+                    gap_cond=0
+                    cond_3=0
+                    break
+            else:
+                if df.loc[ind[i],'High']>=1.003*buy:
+                    cond_3=1
+                    y=i
+                if cond_3 == 0 and df.loc[ind[i],'Low']<max((df.loc[ind[i],'spl_V']),(df.loc[ind[i-1],'ST']),(df.loc[ind[i],'VWAP']),buy*0.997):
+                    df.loc[ind[i],'Buy']='Buy exit'
+                    df.loc[ind[i],'Buy_p']=buy_ext=max((df.loc[ind[i],'spl_V']),(df.loc[ind[i-1],'ST']),(df.loc[ind[i],'VWAP']),buy*0.997)
+                    df.loc[ind[i],'PL_points']=buy_ext-buy 
+                    buy=0
+                    cond_3=0
+                elif i!=y and cond_3 == 1 and df.loc[ind[i],'Low']<max((df.loc[ind[i],'spl_V']),(df.loc[ind[i-1],'ST']),(df.loc[ind[i],'VWAP']),buy):
+                    df.loc[ind[i],'Buy']='Buy exit'
+                    df.loc[ind[i],'Buy_p']=buy_ext=max((df.loc[ind[i],'spl_V']),(df.loc[ind[i-1],'ST']),(df.loc[ind[i],'VWAP']),buy)
+                    df.loc[ind[i],'PL_points']=buy_ext-buy 
+                    buy=0
+                    cond_3=0
+                elif df.loc[ind[i],'High'] > 1.005*buy and df.loc[ind[i],'Low'] < df.loc[ind[i-1],'Low']:
+                    df.loc[ind[i],'Buy']='Buy exit'
+                    df.loc[ind[i],'Buy_p']=buy_ext=df.loc[ind[i-1],'Low']
+                    df.loc[ind[i],'PL_points']=buy_ext-buy     
+                    buy=0
+                    cond_3=0
+                elif ind[i].time() == dt.time(15, 25):
+                    df.loc[ind[i],'Buy']='Buy exit'
+                    df.loc[ind[i],'Buy_p']=buy_ext=df.loc[ind[i],'Close']
+                    df.loc[ind[i],'PL_points']=buy_ext-buy 
+                    buy=0
+                    cond_3=0
+                    break
+     
+#-----------------------------------------------------------------------------------------
+
+#Graphing
+
+def avp_graph(DF):
+    from datetime import date
+    import matplotlib.pylab as plt
+    import mplfinance as mpf
+    
+    %matplotlib inline
+    df=DF.copy()
+    apds = [ mpf.make_addplot(df['spl_V'],type='scatter',markersize=50,marker='_'),
+             mpf.make_addplot(df['sph_V'],type='scatter',markersize=50,marker='_'),
+            mpf.make_addplot(df['lpl_V'],type='scatter',markersize=150,marker=6),
+             mpf.make_addplot(df['lph_V'],type='scatter',markersize=150,marker=7),
+             mpf.make_addplot(df[['VWAP','ST']])
+           ]
+    if df['Buy_p'].sum()!=0:
+        apds.append( mpf.make_addplot(df['Buy_p'],type='scatter',markersize=150,marker=5,color='b'))
+    
+    if df['Sell_p'].sum()!=0:
+        apds.append( mpf.make_addplot(df['Sell_p'],type='scatter',markersize=150,marker=5,color='y'))
+        
+        
+    fig = mpf.plot(df,type = 'candle',addplot=apds,figscale=1.5,title='Nifty50', figratio=(25,10),volume=True)
+    return fig
+
+
+df_d=df.resample('D').agg({'Open':'first','High':'max','Low':'min','Close':'last','Volume':'sum'}).dropna()
+date_lst=[]
+for i in range(len(df_d)):
+    date = df_d.index[i].strftime("%Y-%m-%d")
+    date_lst.append(date)
+
+for i in range(len(df_d)-2):  
+    avp_graph(df[date_lst[i]:date_lst[i+2]])
+avp_graph(df['2020-05-14'])   
+print("--- %s seconds ---" % (time.time() - start_time)) 
